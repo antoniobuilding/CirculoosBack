@@ -40,7 +40,9 @@ router.post(
         'SECOND_LIFE',
       ])
       .withMessage('Invalid status'),
-    body('currentOwner').notEmpty().withMessage('Current owner is required'),
+    body('currentOwner')
+      .isIn(['Molto', 'Plasnovo', 'Distributor'])
+      .withMessage('Current owner must be Molto, Plasnovo, or Distributor'),
     body('batch').notEmpty().withMessage('Batch is required'),
   ],
   validate,
