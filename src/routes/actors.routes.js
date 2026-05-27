@@ -11,9 +11,9 @@ import {
 
 const router = Router();
 
-router.get('/', getActors);
+router.get('/', authenticate, getActors);
 
-router.get('/:id', getActorById);
+router.get('/:id', authenticate, getActorById);
 
 router.post(
   '/',

@@ -9,7 +9,7 @@ import {
 
 const router = Router({ mergeParams: true });
 
-router.get('/', getProductEvents);
+router.get('/', authenticate, getProductEvents);
 
 router.post(
   '/',

@@ -7,7 +7,7 @@ import {
 
 const router = Router();
 
-router.get('/', getMetrics);
+router.get('/', authenticate, getMetrics);
 
 router.put('/:id', authenticate, authorize('SUPERADMIN', 'ADMIN'), updateMetric);
 

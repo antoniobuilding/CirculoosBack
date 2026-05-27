@@ -12,9 +12,9 @@ import {
 
 const router = Router();
 
-router.get('/', getProducts);
+router.get('/', authenticate, getProducts);
 
-router.get('/:id', getProductById);
+router.get('/:id', authenticate, getProductById);
 
 router.post(
   '/',
