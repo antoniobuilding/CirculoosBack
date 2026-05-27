@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  VIEWER
+}
+
+enum ProductStatus {
+  IN_USE
+  MANUFACTURING
+  REPAIR
+  RECYCLING
+  DISTRIBUTION
+  SECOND_LIFE
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(VIEWER)
+  avatar    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Product {
+  id                 String        @id
+  name               String
+  material           String
+  recycledPercentage Float         @map("recycled_percentage")
+  weight             Float
+  color              String
+  origin             String
+  status             ProductStatus
+  currentOwner       String        @map("current_owner")
+  batch              String
+  certifications     String[]
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  events             ProductEvent[]
+
+  @@map("products")
+}
+
+model ProductEvent {
+  id          Int      @id @default(autoincrement())
+  productId   String   @map("product_id")
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type        String
+  date        DateTime
+  actor       String
+  location    String
+  description String
+  details     Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("product_events")
+}
+
+model Actor {
+  id          Int    @id @default(autoincrement())
+  name        String @unique
+  role        String
+  location    String
+  description String
+  metrics     Json
+  color       String
+
+  @@map("actors")
+}
+
+model EnvironmentalMetric {
+  id      Int    @id @default(autoincrement())
+  key     String @unique
+  label   String
+  current Float
+  target  Float
+  unit    String
+  change  String
+  icon    String?
+
+  @@map("environmental_metrics")
+}
+
+model PlasnovoRecycling {
+  rpid                   String   @id
+  ngsildId               String   @unique @map("ngsild_id")
+  type                   String   @default("plasnovo_recycling")
+  observedAt             DateTime @map("observed_at")
+  inputWasteBatchId      String   @map("input_waste_batch_id")
+  materialType           String   @map("material_type")
+  polymerGrade           String   @map("polymer_grade")
+  quantity               Float
+  quantityUnitCode       String   @default("KGM") @map("quantity_unit_code")
+  recycledContent        Float    @map("recycled_content")
+  virginContent          Float    @map("virgin_content")
+  entryDate              DateTime @map("entry_date")
+  recyclingDate          DateTime @map("recycling_date")
+  supplierId             String   @map("supplier_id")
+  supplierName           String   @map("supplier_name")
+  province               String
+  country                String   @default("ES")
+  lerCode                String   @map("ler_code")
+  nimaCode               String   @map("nima_code")
+  wasteOrigin            String   @map("waste_origin")
+  processLine            String   @map("process_line")
+  operatorId             String   @map("operator_id")
+  shiftCode              String   @map("shift_code")
+  moistureLevel          Float    @map("moisture_level")
+  contaminationLevel     String   @map("contamination_level")
+  bulkDensity            Float    @map("bulk_density")
+  bulkDensityUnitCode    String   @default("KMQ") @map("bulk_density_unit_code")
+  meltFlowIndex          Float    @map("melt_flow_index")
+  meltFlowIndexUnitCode  String   @default("G2") @map("melt_flow_index_unit_code")
+  batchStatus            String   @map("batch_status")
+  qualityGrade           String   @map("quality_grade")
+  storageWarehouse       String   @map("storage_warehouse")
+  observations           String?
+  createdAt              DateTime @default(now()) @map("created_at")
+  productions            MoltoProduction[]
+
+  @@map("plasnovo_recycling")
+}
+
+model MoltoProduction {
+  id                          String            @id
+  type                        String            @default("molto_production")
+  observedAt                  DateTime          @map("observed_at")
+  productionOrderId           String            @map("production_order_id")
+  productReference            String            @map("product_reference")
+  productFamily               String            @map("product_family")
+  machineId                   String            @map("machine_id")
+  machineTonnage              Int               @map("machine_tonnage")
+  mouldId                     String            @map("mould_id")
+  mouldCavities               Int               @map("mould_cavities")
+  materialType                String            @map("material_type")
+  materialBatchId             String            @map("material_batch_id")
+  materialBatch               PlasnovoRecycling @relation(fields: [materialBatchId], references: [rpid])
+  recycledContent             Float             @map("recycled_content")
+  colorBatchId                String            @map("color_batch_id")
+  colorName                   String            @map("color_name")
+  injectedQuantity            Int               @map("injected_quantity")
+  plannedQuantity             Int               @map("planned_quantity")
+  scrapQuantity               Int               @map("scrap_quantity")
+  defectiveQuantity           Int               @map("defective_quantity")
+  okQuantity                  Int               @map("ok_quantity")
+  cycleTime                   Float             @map("cycle_time")
+  cycleTimeUnitCode           String            @default("SEC") @map("cycle_time_unit_code")
+  injectionPressure           Int               @map("injection_pressure")
+  injectionPressureUnitCode   String            @default("BAR") @map("injection_pressure_unit_code")
+  meltTemperature             Int               @map("melt_temperature")
+  meltTemperatureUnitCode     String            @default("CEL") @map("melt_temperature_unit_code")
+  unitWeight                  Float             @map("unit_weight")
+  unitWeightUnitCode          String            @default("GRM") @map("unit_weight_unit_code")
+  energyConsumption           Float             @map("energy_consumption")
+  energyConsumptionUnitCode   String            @default("KWH") @map("energy_consumption_unit_code")
+  operatorId                  String            @map("operator_id")
+  shiftCode                   String            @map("shift_code")
+  productionDate              DateTime          @map("production_date")
+  startTime                   DateTime          @map("start_time")
+  endTime                     DateTime          @map("end_time")
+  qualityStatus               String            @map("quality_status")
+  defectType                  String            @map("defect_type")
+  correctiveAction            String            @map("corrective_action")
+  observations                String?
+  createdAt                   DateTime          @default(now()) @map("created_at")
+
+  @@map("molto_production")
+}
