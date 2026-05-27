@@ -1,7 +1,12 @@
 /**
  * CSV Generation Controller
- * Generates NGSI-LD compatible CSVs from form data for Orion-LD ingestion.
+ * Generates NGSI-LD compatible CSVs for the 3-step recycling flow:
+ *   1. Molto OUTPUT — defective/waste toys go OUT from Molto to Plasnovo
+ *   2. Plasnovo RECEPTION — Plasnovo receives waste from Molto
+ *   3. Plasnovo OUTPUT — Plasnovo sends recycled material back to Molto
  */
+
+import prisma from '../config/prisma.js';
 
 function escapeCsvField(value) {
   if (value === null || value === undefined) return '';
@@ -20,14 +25,140 @@ function buildCsvString(headers, rows) {
   return [headerLine, ...dataLines].join('\n');
 }
 
-export async function generatePlasnovoCsv(req, res, next) {
+// ── 1. Molto OUTPUT ────────────────────────────────────────────────
+
+export async function generateMoltoOutputCsv(req, res, next) {
   try {
-    const entries = req.body;
+    const { entries } = req.body;
 
     if (!Array.isArray(entries) || entries.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Request body must be a non-empty array of recycling batch entries.',
+        error: 'Request body must contain a non-empty "entries" array.',
+      });
+    }
+
+    const headers = [
+      'id',
+      'type',
+      'observedat',
+      'batchId',
+      'productReference',
+      'materialType',
+      'quantity',
+      'quantity_unitCode',
+      'reason',
+      'date',
+      'operatorId',
+      'shiftCode',
+      'destination',
+      'observations',
+    ];
+
+    const rows = entries.map((entry) => ({
+      id: `urn:ngsi-ld:circuloos:molto_output:${entry.batchId}`,
+      type: 'molto_waste_output',
+      observedat: entry.date ? new Date(entry.date).toISOString() : '0',
+      batchId: entry.batchId,
+      productReference: entry.productReference,
+      materialType: entry.materialType,
+      quantity: entry.quantity,
+      quantity_unitCode: 'KGM',
+      reason: entry.reason,
+      date: entry.date,
+      operatorId: entry.operatorId,
+      shiftCode: entry.shiftCode,
+      destination: entry.destination || 'Plasnovo S.L',
+      observations: entry.observations || '',
+    }));
+
+    const csv = buildCsvString(headers, rows);
+    const filename = `molto_output_${Date.now()}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── 2. Plasnovo RECEPTION ──────────────────────────────────────────
+
+export async function generatePlasnovoReceptionCsv(req, res, next) {
+  try {
+    const { entries } = req.body;
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Request body must contain a non-empty "entries" array.',
+      });
+    }
+
+    const headers = [
+      'id',
+      'type',
+      'observedat',
+      'receptionId',
+      'receivedFrom',
+      'materialType',
+      'quantityReceived',
+      'quantityReceived_unitCode',
+      'receptionDate',
+      'batchId',
+      'conditionAssessment',
+      'moistureLevel',
+      'contaminationLevel',
+      'operatorId',
+      'shiftCode',
+      'storageLocation',
+      'observations',
+    ];
+
+    const rows = entries.map((entry) => ({
+      id: `urn:ngsi-ld:circuloos:plasnovo_reception:${entry.receptionId}`,
+      type: 'plasnovo_waste_reception',
+      observedat: entry.receptionDate
+        ? new Date(entry.receptionDate).toISOString()
+        : '0',
+      receptionId: entry.receptionId,
+      receivedFrom: entry.receivedFrom || 'Molto',
+      materialType: entry.materialType,
+      quantityReceived: entry.quantityReceived,
+      quantityReceived_unitCode: 'KGM',
+      receptionDate: entry.receptionDate,
+      batchId: entry.batchId,
+      conditionAssessment: entry.conditionAssessment,
+      moistureLevel: entry.moistureLevel,
+      contaminationLevel: entry.contaminationLevel,
+      operatorId: entry.operatorId,
+      shiftCode: entry.shiftCode,
+      storageLocation: entry.storageLocation,
+      observations: entry.observations || '',
+    }));
+
+    const csv = buildCsvString(headers, rows);
+    const filename = `plasnovo_reception_${Date.now()}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── 3. Plasnovo OUTPUT ─────────────────────────────────────────────
+
+export async function generatePlasnovoOutputCsv(req, res, next) {
+  try {
+    const { entries } = req.body;
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Request body must contain a non-empty "entries" array.',
       });
     }
 
@@ -36,197 +167,53 @@ export async function generatePlasnovoCsv(req, res, next) {
       'type',
       'observedat',
       'rpid',
-      'inputWasteBatchId',
       'materialType',
-      'polymerGrade',
-      'quantity',
-      'quantity_unitCode',
+      'quantityOutput',
+      'quantityOutput_unitCode',
       'recycledContent',
-      'virginContent',
-      'entryDate',
-      'recyclingDate',
-      'supplierId',
-      'supplierName',
-      'province',
-      'country',
-      'lerCode',
-      'nimaCode',
-      'wasteOrigin',
+      'colorant',
+      'colorantQuantity',
+      'colorantQuantity_unitCode',
+      'polymerGrade',
+      'meltFlowIndex',
+      'qualityGrade',
+      'batchStatus',
       'processLine',
+      'outputDate',
+      'destination',
       'operatorId',
       'shiftCode',
-      'moistureLevel',
-      'contaminationLevel',
-      'bulkDensity',
-      'bulkDensity_unitCode',
-      'meltFlowIndex',
-      'meltFlowIndex_unitCode',
-      'batchStatus',
-      'qualityGrade',
-      'storageWarehouse',
       'observations',
     ];
 
     const rows = entries.map((entry) => ({
-      id: `urn:ngsi-ld:circuloos:plasnovo:${entry.rpid}`,
-      type: 'plasnovo_recycling',
-      observedat: entry.recyclingDate
-        ? new Date(entry.recyclingDate).toISOString()
+      id: `urn:ngsi-ld:circuloos:plasnovo_output:${entry.rpid}`,
+      type: 'plasnovo_recycled_output',
+      observedat: entry.outputDate
+        ? new Date(entry.outputDate).toISOString()
         : '0',
       rpid: entry.rpid,
-      inputWasteBatchId: entry.inputWasteBatchId,
       materialType: entry.materialType,
+      quantityOutput: entry.quantityOutput,
+      quantityOutput_unitCode: 'KGM',
+      recycledContent: entry.recycledContent,
+      colorant: entry.colorant,
+      colorantQuantity: entry.colorantQuantity,
+      colorantQuantity_unitCode: 'KGM',
       polymerGrade: entry.polymerGrade,
-      quantity: entry.quantity,
-      quantity_unitCode: 'KGM',
-      recycledContent: entry.recycledContent,
-      virginContent: entry.virginContent,
-      entryDate: entry.entryDate,
-      recyclingDate: entry.recyclingDate,
-      supplierId: entry.supplierId,
-      supplierName: entry.supplierName,
-      province: entry.province,
-      country: entry.country || 'ES',
-      lerCode: entry.lerCode,
-      nimaCode: entry.nimaCode,
-      wasteOrigin: entry.wasteOrigin,
-      processLine: entry.processLine,
-      operatorId: entry.operatorId,
-      shiftCode: entry.shiftCode,
-      moistureLevel: entry.moistureLevel,
-      contaminationLevel: entry.contaminationLevel,
-      bulkDensity: entry.bulkDensity,
-      bulkDensity_unitCode: 'KMQ',
       meltFlowIndex: entry.meltFlowIndex,
-      meltFlowIndex_unitCode: 'G2',
-      batchStatus: entry.batchStatus,
       qualityGrade: entry.qualityGrade,
-      storageWarehouse: entry.storageWarehouse,
-      observations: entry.observations || '',
-    }));
-
-    const csv = buildCsvString(headers, rows);
-    const filename = `plasnovo_recycling_${Date.now()}.csv`;
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(csv);
-  } catch (err) {
-    next(err);
-  }
-}
-
-export async function generateMoltoCsv(req, res, next) {
-  try {
-    const entries = req.body;
-
-    if (!Array.isArray(entries) || entries.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Request body must be a non-empty array of production entries.',
-      });
-    }
-
-    const headers = [
-      'id',
-      'type',
-      'observedat',
-      'productionOrderId',
-      'productReference',
-      'productFamily',
-      'machineId',
-      'machineTonnage',
-      'machineTonnage_unitCode',
-      'mouldId',
-      'mouldCavities',
-      'materialType',
-      'materialBatchId',
-      'recycledContent',
-      'colorBatchId',
-      'colorName',
-      'injectedQuantity',
-      'injectedQuantity_unitCode',
-      'plannedQuantity',
-      'plannedQuantity_unitCode',
-      'scrapQuantity',
-      'scrapQuantity_unitCode',
-      'defectiveQuantity',
-      'defectiveQuantity_unitCode',
-      'okQuantity',
-      'okQuantity_unitCode',
-      'cycleTime',
-      'cycleTime_unitCode',
-      'injectionPressure',
-      'injectionPressure_unitCode',
-      'meltTemperature',
-      'meltTemperature_unitCode',
-      'unitWeight',
-      'unitWeight_unitCode',
-      'energyConsumption',
-      'energyConsumption_unitCode',
-      'operatorId',
-      'shiftCode',
-      'productionDate',
-      'startTime',
-      'endTime',
-      'qualityStatus',
-      'defectType',
-      'correctiveAction',
-      'observations',
-    ];
-
-    const rows = entries.map((entry) => ({
-      id: `urn:ngsi-ld:circuloos:molto:${entry.productionOrderId}`,
-      type: 'molto_production',
-      observedat: entry.productionDate
-        ? new Date(entry.productionDate).toISOString()
-        : '0',
-      productionOrderId: entry.productionOrderId,
-      productReference: entry.productReference,
-      productFamily: entry.productFamily,
-      machineId: entry.machineId,
-      machineTonnage: entry.machineTonnage,
-      machineTonnage_unitCode: 'TNE',
-      mouldId: entry.mouldId,
-      mouldCavities: entry.mouldCavities,
-      materialType: entry.materialType,
-      materialBatchId: entry.materialBatchId,
-      recycledContent: entry.recycledContent,
-      colorBatchId: entry.colorBatchId,
-      colorName: entry.colorName,
-      injectedQuantity: entry.injectedQuantity,
-      injectedQuantity_unitCode: 'C62',
-      plannedQuantity: entry.plannedQuantity,
-      plannedQuantity_unitCode: 'C62',
-      scrapQuantity: entry.scrapQuantity,
-      scrapQuantity_unitCode: 'C62',
-      defectiveQuantity: entry.defectiveQuantity,
-      defectiveQuantity_unitCode: 'C62',
-      okQuantity: entry.okQuantity,
-      okQuantity_unitCode: 'C62',
-      cycleTime: entry.cycleTime,
-      cycleTime_unitCode: 'SEC',
-      injectionPressure: entry.injectionPressure,
-      injectionPressure_unitCode: 'BAR',
-      meltTemperature: entry.meltTemperature,
-      meltTemperature_unitCode: 'CEL',
-      unitWeight: entry.unitWeight,
-      unitWeight_unitCode: 'GRM',
-      energyConsumption: entry.energyConsumption,
-      energyConsumption_unitCode: 'KWH',
+      batchStatus: entry.batchStatus,
+      processLine: entry.processLine,
+      outputDate: entry.outputDate,
+      destination: entry.destination || 'Molto',
       operatorId: entry.operatorId,
       shiftCode: entry.shiftCode,
-      productionDate: entry.productionDate,
-      startTime: entry.startTime,
-      endTime: entry.endTime,
-      qualityStatus: entry.qualityStatus,
-      defectType: entry.defectType,
-      correctiveAction: entry.correctiveAction,
       observations: entry.observations || '',
     }));
 
     const csv = buildCsvString(headers, rows);
-    const filename = `molto_production_${Date.now()}.csv`;
+    const filename = `plasnovo_output_${Date.now()}.csv`;
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -235,74 +222,66 @@ export async function generateMoltoCsv(req, res, next) {
     next(err);
   }
 }
+
+// ── Templates ──────────────────────────────────────────────────────
 
 export async function getCsvTemplates(_req, res, next) {
   try {
     const templates = {
-      plasnovo: {
-        label: 'Plasnovo Recycling',
+      moltoOutput: {
+        label: 'Molto Waste Output',
+        description: 'Defective/deformed toys sent from Molto to Plasnovo as plastic waste',
         fields: [
-          { name: 'rpid', type: 'string', required: true, example: 'RPID-2026-00001', description: 'Recycled Plastic ID' },
-          { name: 'inputWasteBatchId', type: 'string', required: true, example: 'IWB-2026-0001', description: 'Input waste batch identifier' },
-          { name: 'materialType', type: 'string', required: true, example: 'PP', description: 'Material type (PP, PE, ABS, etc.)' },
-          { name: 'polymerGrade', type: 'string', required: true, example: 'PP-H-035', description: 'Polymer grade specification' },
-          { name: 'quantity', type: 'number', required: true, example: 1250.5, description: 'Quantity in KG' },
-          { name: 'recycledContent', type: 'number', required: true, example: 98.5, description: 'Recycled content percentage' },
-          { name: 'virginContent', type: 'number', required: true, example: 1.5, description: 'Virgin content percentage' },
-          { name: 'entryDate', type: 'date', required: true, example: '2026-01-14', description: 'Date waste entered the facility' },
-          { name: 'recyclingDate', type: 'date', required: true, example: '2026-01-15', description: 'Date recycling was completed' },
-          { name: 'supplierId', type: 'string', required: true, example: 'B12345678', description: 'Supplier tax ID' },
-          { name: 'supplierName', type: 'string', required: true, example: 'EcoPlastics SL', description: 'Supplier name' },
-          { name: 'province', type: 'string', required: true, example: 'Alicante', description: 'Province of origin' },
-          { name: 'lerCode', type: 'string', required: true, example: '150102', description: 'European Waste Catalogue code' },
-          { name: 'nimaCode', type: 'string', required: true, example: '4603000123', description: 'NIMA registration code' },
-          { name: 'wasteOrigin', type: 'string', required: true, example: 'post-industrial', description: 'Waste origin type' },
-          { name: 'processLine', type: 'string', required: true, example: 'LINE-A', description: 'Processing line identifier' },
-          { name: 'operatorId', type: 'string', required: true, example: 'OP-014', description: 'Operator identifier' },
-          { name: 'shiftCode', type: 'string', required: true, example: 'M', description: 'Shift code (M=Morning, T=Afternoon, N=Night)' },
-          { name: 'moistureLevel', type: 'number', required: true, example: 0.42, description: 'Moisture level percentage' },
-          { name: 'contaminationLevel', type: 'string', required: true, example: 'low', description: 'Contamination level (low, medium, high)' },
-          { name: 'bulkDensity', type: 'number', required: true, example: 0.55, description: 'Bulk density in kg/m3' },
-          { name: 'meltFlowIndex', type: 'number', required: true, example: 12.5, description: 'Melt flow index in g/10min' },
-          { name: 'batchStatus', type: 'string', required: true, example: 'APPROVED', description: 'Batch status (APPROVED, PENDING, REJECTED)' },
-          { name: 'qualityGrade', type: 'string', required: true, example: 'A', description: 'Quality grade (A, B, C)' },
-          { name: 'storageWarehouse', type: 'string', required: true, example: 'WH-01', description: 'Storage warehouse code' },
+          { name: 'productReference', type: 'string', required: true, example: 'WHEEL-RED-120MM', description: 'Product name/reference' },
+          { name: 'materialType', type: 'string', required: true, options: ['PP', 'PS', 'ASA'], description: 'Material type' },
+          { name: 'quantity', type: 'number', required: true, example: 250.5, description: 'Weight in KG' },
+          { name: 'batchId', type: 'string', required: true, example: 'WB-2026-0001', description: 'Waste batch identifier' },
+          { name: 'reason', type: 'string', required: true, options: ['defective', 'deformed', 'end_of_life', 'production_scrap', 'quality_rejected'], description: 'Reason for waste' },
+          { name: 'date', type: 'date', required: true, example: '2026-03-15', description: 'Output date' },
+          { name: 'operatorId', type: 'string', required: true, example: 'OP-101', description: 'Operator identifier' },
+          { name: 'shiftCode', type: 'string', required: true, options: ['M', 'T', 'N'], description: 'Shift (M=Morning, T=Afternoon, N=Night)' },
+          { name: 'destination', type: 'string', required: false, example: 'Plasnovo S.L', description: 'Destination (default: Plasnovo S.L)' },
           { name: 'observations', type: 'string', required: false, example: '', description: 'Additional observations' },
         ],
       },
-      molto: {
-        label: 'Molto Production',
+      plasnovoReception: {
+        label: 'Plasnovo Waste Reception',
+        description: 'Plasnovo receives waste from Molto and logs it',
         fields: [
-          { name: 'productionOrderId', type: 'string', required: true, example: 'PO-2026-0001', description: 'Production order identifier' },
-          { name: 'productReference', type: 'string', required: true, example: 'WHEEL-RED-120MM', description: 'Product reference code' },
-          { name: 'productFamily', type: 'string', required: true, example: 'wheels', description: 'Product family category' },
-          { name: 'machineId', type: 'string', required: true, example: 'MCH-007', description: 'Machine identifier' },
-          { name: 'machineTonnage', type: 'number', required: true, example: 180, description: 'Machine tonnage' },
-          { name: 'mouldId', type: 'string', required: true, example: 'MLD-WH120', description: 'Mould identifier' },
-          { name: 'mouldCavities', type: 'number', required: true, example: 4, description: 'Number of mould cavities' },
-          { name: 'materialType', type: 'string', required: true, example: 'PP', description: 'Material type' },
-          { name: 'materialBatchId', type: 'string', required: true, example: 'RPID-2026-00001', description: 'Material batch ID (from Plasnovo)' },
-          { name: 'recycledContent', type: 'number', required: true, example: 98.5, description: 'Recycled content percentage' },
-          { name: 'colorBatchId', type: 'string', required: true, example: 'COL-RED-001', description: 'Color batch identifier' },
-          { name: 'colorName', type: 'string', required: true, example: 'Ferrari Red', description: 'Color name' },
-          { name: 'injectedQuantity', type: 'number', required: true, example: 4850, description: 'Total injected quantity' },
-          { name: 'plannedQuantity', type: 'number', required: true, example: 5000, description: 'Planned production quantity' },
-          { name: 'scrapQuantity', type: 'number', required: true, example: 40, description: 'Scrap quantity' },
-          { name: 'defectiveQuantity', type: 'number', required: true, example: 110, description: 'Defective units quantity' },
-          { name: 'okQuantity', type: 'number', required: true, example: 4850, description: 'OK units quantity' },
-          { name: 'cycleTime', type: 'number', required: true, example: 18.5, description: 'Cycle time in seconds' },
-          { name: 'injectionPressure', type: 'number', required: true, example: 850, description: 'Injection pressure in BAR' },
-          { name: 'meltTemperature', type: 'number', required: true, example: 225, description: 'Melt temperature in Celsius' },
-          { name: 'unitWeight', type: 'number', required: true, example: 42.3, description: 'Unit weight in grams' },
-          { name: 'energyConsumption', type: 'number', required: true, example: 148.7, description: 'Energy consumption in kWh' },
-          { name: 'operatorId', type: 'string', required: true, example: 'OP-101', description: 'Operator identifier' },
-          { name: 'shiftCode', type: 'string', required: true, example: 'M', description: 'Shift code (M=Morning, T=Afternoon, N=Night)' },
-          { name: 'productionDate', type: 'date', required: true, example: '2026-02-01', description: 'Production date' },
-          { name: 'startTime', type: 'datetime', required: true, example: '2026-02-01T07:00:00Z', description: 'Production start time' },
-          { name: 'endTime', type: 'datetime', required: true, example: '2026-02-01T15:00:00Z', description: 'Production end time' },
-          { name: 'qualityStatus', type: 'string', required: true, example: 'OK', description: 'Quality status (OK, NOK, PARTIAL)' },
-          { name: 'defectType', type: 'string', required: true, example: 'none', description: 'Type of defect found' },
-          { name: 'correctiveAction', type: 'string', required: true, example: 'none', description: 'Corrective action taken' },
+          { name: 'receptionId', type: 'string', required: true, example: 'REC-2026-0001', description: 'Unique reception identifier' },
+          { name: 'receivedFrom', type: 'string', required: false, example: 'Molto', description: 'Source (default: Molto)' },
+          { name: 'materialType', type: 'string', required: true, options: ['PP', 'PS', 'ASA'], description: 'Material type' },
+          { name: 'quantityReceived', type: 'number', required: true, example: 250.5, description: 'Received weight in KG' },
+          { name: 'receptionDate', type: 'date', required: true, example: '2026-03-16', description: 'Reception date' },
+          { name: 'batchId', type: 'string', required: true, example: 'WB-2026-0001', description: "Molto's original batch ID for traceability" },
+          { name: 'conditionAssessment', type: 'string', required: true, options: ['good', 'contaminated', 'mixed', 'damaged'], description: 'Condition assessment' },
+          { name: 'moistureLevel', type: 'number', required: true, example: 0.42, description: 'Moisture level percentage' },
+          { name: 'contaminationLevel', type: 'string', required: true, options: ['low', 'medium', 'high'], description: 'Contamination level' },
+          { name: 'operatorId', type: 'string', required: true, example: 'OP-014', description: 'Operator identifier' },
+          { name: 'shiftCode', type: 'string', required: true, options: ['M', 'T', 'N'], description: 'Shift (M=Morning, T=Afternoon, N=Night)' },
+          { name: 'storageLocation', type: 'string', required: true, example: 'WH-01', description: 'Storage location' },
+          { name: 'observations', type: 'string', required: false, example: '', description: 'Additional observations' },
+        ],
+      },
+      plasnovoOutput: {
+        label: 'Plasnovo Recycled Output',
+        description: 'Plasnovo sends recycled material (with colorant) back to Molto',
+        fields: [
+          { name: 'rpid', type: 'string', required: true, example: 'RPID-2026-00001', description: 'Recycled Product ID' },
+          { name: 'materialType', type: 'string', required: true, options: ['PP', 'PS', 'ASA'], description: 'Material type' },
+          { name: 'quantityOutput', type: 'number', required: true, example: 245.2, description: 'Output weight in KG' },
+          { name: 'recycledContent', type: 'number', required: true, example: 95, description: 'Recycled content percentage (typically 90-99%)' },
+          { name: 'colorant', type: 'string', required: true, example: 'Ferrari Red', description: 'Color name added' },
+          { name: 'colorantQuantity', type: 'number', required: true, example: 5.3, description: 'Colorant weight in KG' },
+          { name: 'polymerGrade', type: 'string', required: true, example: 'PP-H-035', description: 'Polymer grade specification' },
+          { name: 'meltFlowIndex', type: 'number', required: true, example: 12.5, description: 'Melt flow index in g/10min' },
+          { name: 'qualityGrade', type: 'string', required: true, options: ['A', 'B', 'C'], description: 'Quality grade' },
+          { name: 'batchStatus', type: 'string', required: true, options: ['APPROVED', 'QUARANTINE', 'REJECTED'], description: 'Batch status' },
+          { name: 'processLine', type: 'string', required: true, options: ['LINE-A', 'LINE-B', 'LINE-C'], description: 'Processing line' },
+          { name: 'outputDate', type: 'date', required: true, example: '2026-03-18', description: 'Output date' },
+          { name: 'destination', type: 'string', required: false, example: 'Molto', description: 'Destination (default: Molto)' },
+          { name: 'operatorId', type: 'string', required: true, example: 'OP-014', description: 'Operator identifier' },
+          { name: 'shiftCode', type: 'string', required: true, options: ['M', 'T', 'N'], description: 'Shift (M=Morning, T=Afternoon, N=Night)' },
           { name: 'observations', type: 'string', required: false, example: '', description: 'Additional observations' },
         ],
       },
@@ -311,6 +290,28 @@ export async function getCsvTemplates(_req, res, next) {
     return res.status(200).json({
       success: true,
       data: templates,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Product References ─────────────────────────────────────────────
+
+export async function getProductReferences(_req, res, next) {
+  try {
+    const products = await prisma.product.findMany({
+      select: {
+        id: true,
+        name: true,
+        material: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: products,
     });
   } catch (err) {
     next(err);

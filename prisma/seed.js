@@ -36,7 +36,7 @@ const products = [
       {
         type: 'Distribution',
         date: '2026-01-18T14:20:00',
-        actor: 'EcoDistribution',
+        actor: 'Distributor',
         location: 'Valencia',
         description: 'Delivery made with electric fleet',
         details: {
@@ -184,7 +184,7 @@ const products = [
       {
         type: 'Distribution',
         date: '2026-02-01T09:30:00',
-        actor: 'EcoDistribution',
+        actor: 'Distributor',
         location: 'Seville',
         description: 'Sustainable transport delivery',
       },
@@ -206,7 +206,7 @@ const products = [
     color: 'Blue/Black',
     origin: 'RE-PLAY Plant – Ibi, Alicante',
     status: 'Distribution',
-    currentOwner: 'EcoDistribution',
+    currentOwner: 'Distributor',
     createdAt: '2026-02-10T08:45:00',
     batch: 'LOT-2026-0210',
     certifications: ['ISO 14001', 'EN 71-3', 'CE'],
@@ -221,7 +221,7 @@ const products = [
       {
         type: 'Distribution',
         date: '2026-02-14T10:00:00',
-        actor: 'EcoDistribution',
+        actor: 'Distributor',
         location: 'In transit',
         description: 'On its way to point of sale',
         details: {
@@ -353,7 +353,7 @@ const actors = [
     role: 'Recycler',
     location: 'Ibi, Alicante',
     description:
-      'Specialists in post-consumer plastic recycling and material recovery',
+      'Specialists in post-consumer and post-industrial plastic recycling',
     metrics: {
       'Material processed': '2,450 kg/month',
       'Recovery rate': '95%',
@@ -366,7 +366,7 @@ const actors = [
     role: 'Producer',
     location: 'Ibi, Alicante',
     description:
-      'Injection moulding producer of plastic toys and components using recycled materials',
+      'Toy manufacturer specialising in injection moulding with recycled plastics',
     metrics: {
       'Monthly production': '15,000 units',
       'OK rate': '97%',
@@ -375,11 +375,11 @@ const actors = [
     color: '#E11D48',
   },
   {
-    name: 'EcoDistribution',
+    name: 'Distributor',
     role: 'Distributor',
     location: 'Nationwide',
     description:
-      'Sustainable distribution network with full electric fleet',
+      'Logistics and distribution of products',
     metrics: {
       'Active routes': '45',
       'Emissions reduced': '60%',
@@ -392,7 +392,7 @@ const actors = [
     role: 'Repairer',
     location: 'Madrid, Barcelona, Valencia',
     description:
-      'Specialised repair and maintenance service to extend product life',
+      'Repair and refurbishment service to extend product life',
     metrics: {
       'Monthly repairs': '234',
       'Life extension': '+2.5 years',
