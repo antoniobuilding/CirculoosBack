@@ -85,7 +85,7 @@ const products = [
       {
         type: 'Repair',
         date: '2025-12-10T10:20:00',
-        actor: 'ToyRenew',
+        actor: 'Molto',
         location: 'Madrid',
         description: 'Replacement of 5 damaged pieces',
         details: {
@@ -144,7 +144,7 @@ const products = [
       {
         type: 'Repair',
         date: '2026-02-08T15:45:00',
-        actor: 'ToyRenew',
+        actor: 'Molto',
         location: 'Barcelona',
         description: 'Voice mechanism repair',
         details: {
@@ -326,7 +326,7 @@ const products = [
       {
         type: 'Maintenance',
         date: '2025-11-20T12:30:00',
-        actor: 'ToyRenew',
+        actor: 'Molto',
         location: 'Bilbao',
         description: 'Inspection and lubrication of moving parts',
       },
@@ -386,19 +386,6 @@ const actors = [
       'Monthly deliveries': '12,500',
     },
     color: '#6D28D9',
-  },
-  {
-    name: 'ToyRenew',
-    role: 'Repairer',
-    location: 'Madrid, Barcelona, Valencia',
-    description:
-      'Repair and refurbishment service to extend product life',
-    metrics: {
-      'Monthly repairs': '234',
-      'Life extension': '+2.5 years',
-      'Success rate': '92%',
-    },
-    color: '#D97706',
   },
 ];
 
