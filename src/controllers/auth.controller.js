@@ -20,7 +20,7 @@ function sanitizeUser(user) {
 
 export async function register(req, res, next) {
   try {
-    const { email, name, password } = req.body;
+    const { email, name, password, actorId } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -32,13 +32,20 @@ export async function register(req, res, next) {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const data = {
+      email,
+      name,
+      password: hashedPassword,
+      role: 'VIEWER',
+    };
+
+    if (actorId) {
+      data.actorId = parseInt(actorId);
+    }
+
     const user = await prisma.user.create({
-      data: {
-        email,
-        name,
-        password: hashedPassword,
-        role: 'VIEWER',
-      },
+      data,
+      include: { actor: true },
     });
 
     const { accessToken, refreshToken } = generateTokens(user.id);
@@ -60,7 +67,10 @@ export async function login(req, res, next) {
   try {
     const { email, password } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { actor: true },
+    });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -95,6 +105,7 @@ export async function me(req, res, next) {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
+      include: { actor: true },
     });
 
     if (!user) {

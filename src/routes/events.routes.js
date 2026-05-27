@@ -14,7 +14,7 @@ router.get('/', getProductEvents);
 router.post(
   '/',
   authenticate,
-  authorize('ADMIN'),
+  authorize('SUPERADMIN', 'ADMIN'),
   [
     body('type').notEmpty().withMessage('Event type is required'),
     body('date').notEmpty().withMessage('Date is required'),

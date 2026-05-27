@@ -18,7 +18,7 @@ router.get('/:id', getActorById);
 router.post(
   '/',
   authenticate,
-  authorize('ADMIN'),
+  authorize('SUPERADMIN', 'ADMIN'),
   [
     body('name').notEmpty().withMessage('Name is required'),
     body('role').notEmpty().withMessage('Role is required'),
@@ -31,6 +31,6 @@ router.post(
   createActor
 );
 
-router.put('/:id', authenticate, authorize('ADMIN'), updateActor);
+router.put('/:id', authenticate, authorize('SUPERADMIN', 'ADMIN'), updateActor);
 
 export default router;

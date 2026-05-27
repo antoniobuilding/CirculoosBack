@@ -19,7 +19,7 @@ router.get('/:id', getProductById);
 router.post(
   '/',
   authenticate,
-  authorize('ADMIN'),
+  authorize('SUPERADMIN', 'ADMIN'),
   [
     body('id').notEmpty().withMessage('Product ID is required'),
     body('name').notEmpty().withMessage('Name is required'),
@@ -47,8 +47,8 @@ router.post(
   createProduct
 );
 
-router.put('/:id', authenticate, authorize('ADMIN'), updateProduct);
+router.put('/:id', authenticate, authorize('SUPERADMIN', 'ADMIN'), updateProduct);
 
-router.delete('/:id', authenticate, authorize('ADMIN'), deleteProduct);
+router.delete('/:id', authenticate, authorize('SUPERADMIN', 'ADMIN'), deleteProduct);
 
 export default router;

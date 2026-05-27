@@ -9,6 +9,6 @@ const router = Router();
 
 router.get('/', getMetrics);
 
-router.put('/:id', authenticate, authorize('ADMIN'), updateMetric);
+router.put('/:id', authenticate, authorize('SUPERADMIN', 'ADMIN'), updateMetric);
 
 export default router;

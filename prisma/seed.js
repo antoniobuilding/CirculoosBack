@@ -1,11 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { readFileSync } from 'fs';
-import { parse } from 'csv-parse/sync';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const prisma = new PrismaClient();
 
@@ -342,7 +336,6 @@ const products = [
 
 const actors = [
   {
-    id: 1,
     name: 'RE-PLAY',
     role: 'Manufacturer',
     location: 'Ibi, Alicante',
@@ -356,7 +349,6 @@ const actors = [
     color: '#006CB7',
   },
   {
-    id: 2,
     name: 'Plasnovo S.L',
     role: 'Recycler',
     location: 'Ibi, Alicante',
@@ -370,7 +362,19 @@ const actors = [
     color: '#009247',
   },
   {
-    id: 3,
+    name: 'Molto',
+    role: 'Producer',
+    location: 'Ibi, Alicante',
+    description:
+      'Injection moulding producer of plastic toys and components using recycled materials',
+    metrics: {
+      'Monthly production': '15,000 units',
+      'OK rate': '97%',
+      'Recycled content': '95%',
+    },
+    color: '#E11D48',
+  },
+  {
     name: 'EcoDistribution',
     role: 'Distributor',
     location: 'Nationwide',
@@ -384,7 +388,6 @@ const actors = [
     color: '#6D28D9',
   },
   {
-    id: 4,
     name: 'ToyRenew',
     role: 'Repairer',
     location: 'Madrid, Barcelona, Valencia',
@@ -451,37 +454,67 @@ async function main() {
 
   // 1. Delete all existing data (respecting FK order)
   console.log('Cleaning existing data...');
-  await prisma.moltoProduction.deleteMany();
-  await prisma.plasnovoRecycling.deleteMany();
   await prisma.productEvent.deleteMany();
   await prisma.product.deleteMany();
+  await prisma.user.deleteMany();
   await prisma.actor.deleteMany();
   await prisma.environmentalMetric.deleteMany();
-  await prisma.user.deleteMany();
 
-  // 2. Create users
+  // 2. Create actors FIRST (users reference actors)
+  console.log('Creating actors...');
+  const createdActors = {};
+  for (const actor of actors) {
+    const created = await prisma.actor.create({
+      data: {
+        name: actor.name,
+        role: actor.role,
+        location: actor.location,
+        description: actor.description,
+        metrics: actor.metrics,
+        color: actor.color,
+      },
+    });
+    createdActors[actor.name] = created;
+  }
+
+  // 3. Create users
   console.log('Creating users...');
-  const adminPassword = await bcrypt.hash('Admin123!', 10);
-  const viewerPassword = await bcrypt.hash('Viewer123!', 10);
+  const password = await bcrypt.hash('Demo2026!', 10);
 
   await prisma.user.createMany({
     data: [
       {
         email: 'admin@replay.es',
-        password: adminPassword,
-        name: 'Admin RE-PLAY',
+        password,
+        name: 'RE-PLAY Admin',
+        role: 'SUPERADMIN',
+        actorId: null,
+      },
+      {
+        email: 'admin@molto.es',
+        password,
+        name: 'Molto Admin',
         role: 'ADMIN',
+        actorId: createdActors['Molto'].id,
+      },
+      {
+        email: 'admin@plasnovo.es',
+        password,
+        name: 'Plasnovo Admin',
+        role: 'ADMIN',
+        actorId: createdActors['Plasnovo S.L'].id,
       },
       {
         email: 'viewer@replay.es',
-        password: viewerPassword,
+        password,
         name: 'Viewer Demo',
         role: 'VIEWER',
+        actorId: null,
       },
     ],
   });
 
-  // 3. Create products and events
+  // 4. Create products and events
   console.log('Creating products and events...');
   for (const p of products) {
     const { events, ...productData } = p;
@@ -514,21 +547,6 @@ async function main() {
     });
   }
 
-  // 4. Create actors
-  console.log('Creating actors...');
-  for (const actor of actors) {
-    await prisma.actor.create({
-      data: {
-        name: actor.name,
-        role: actor.role,
-        location: actor.location,
-        description: actor.description,
-        metrics: actor.metrics,
-        color: actor.color,
-      },
-    });
-  }
-
   // 5. Create environmental metrics
   console.log('Creating environmental metrics...');
   for (const [key, value] of Object.entries(environmentalMetrics)) {
@@ -544,127 +562,15 @@ async function main() {
     });
   }
 
-  // 6. Parse and insert Plasnovo recycling CSV
-  console.log('Importing Plasnovo recycling data from CSV...');
-  const plasnovoCsv = readFileSync(
-    join(__dirname, 'plasnovo_recycling.csv'),
-    'utf-8'
-  );
-  const plasnovoRows = parse(plasnovoCsv, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-  });
-
-  for (const row of plasnovoRows) {
-    await prisma.plasnovoRecycling.create({
-      data: {
-        rpid: row.rpid,
-        ngsildId: row.id,
-        type: row.type,
-        observedAt: new Date(row.observedat),
-        inputWasteBatchId: row.inputWasteBatchId,
-        materialType: row.materialType,
-        polymerGrade: row.polymerGrade,
-        quantity: parseFloat(row.quantity),
-        quantityUnitCode: row.quantity_unitCode,
-        recycledContent: parseFloat(row.recycledContent),
-        virginContent: parseFloat(row.virginContent),
-        entryDate: new Date(row.entryDate),
-        recyclingDate: new Date(row.recyclingDate),
-        supplierId: row.supplierId,
-        supplierName: row.supplierName,
-        province: row.province,
-        country: row.country,
-        lerCode: row.lerCode,
-        nimaCode: row.nimaCode,
-        wasteOrigin: row.wasteOrigin,
-        processLine: row.processLine,
-        operatorId: row.operatorId,
-        shiftCode: row.shiftCode,
-        moistureLevel: parseFloat(row.moistureLevel),
-        contaminationLevel: row.contaminationLevel,
-        bulkDensity: parseFloat(row.bulkDensity),
-        bulkDensityUnitCode: row.bulkDensity_unitCode,
-        meltFlowIndex: parseFloat(row.meltFlowIndex),
-        meltFlowIndexUnitCode: row.meltFlowIndex_unitCode,
-        batchStatus: row.batchStatus,
-        qualityGrade: row.qualityGrade,
-        storageWarehouse: row.storageWarehouse,
-        observations: row.observations || null,
-      },
-    });
-  }
-
-  // 7. Parse and insert Molto production CSV (depends on Plasnovo FK)
-  console.log('Importing Molto production data from CSV...');
-  const moltoCsv = readFileSync(
-    join(__dirname, 'molto_production.csv'),
-    'utf-8'
-  );
-  const moltoRows = parse(moltoCsv, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-  });
-
-  for (const row of moltoRows) {
-    await prisma.moltoProduction.create({
-      data: {
-        id: row.id,
-        type: row.type,
-        observedAt: new Date(row.observedat),
-        productionOrderId: row.productionOrderId,
-        productReference: row.productReference,
-        productFamily: row.productFamily,
-        machineId: row.machineId,
-        machineTonnage: parseInt(row.machineTonnage),
-        mouldId: row.mouldId,
-        mouldCavities: parseInt(row.mouldCavities),
-        materialType: row.materialType,
-        materialBatchId: row.materialBatchId,
-        recycledContent: parseFloat(row.recycledContent),
-        colorBatchId: row.colorBatchId,
-        colorName: row.colorName,
-        injectedQuantity: parseInt(row.injectedQuantity),
-        plannedQuantity: parseInt(row.plannedQuantity),
-        scrapQuantity: parseInt(row.scrapQuantity),
-        defectiveQuantity: parseInt(row.defectiveQuantity),
-        okQuantity: parseInt(row.okQuantity),
-        cycleTime: parseFloat(row.cycleTime),
-        cycleTimeUnitCode: row.cycleTime_unitCode,
-        injectionPressure: parseInt(row.injectionPressure),
-        injectionPressureUnitCode: row.injectionPressure_unitCode,
-        meltTemperature: parseInt(row.meltTemperature),
-        meltTemperatureUnitCode: row.meltTemperature_unitCode,
-        unitWeight: parseFloat(row.unitWeight),
-        unitWeightUnitCode: row.unitWeight_unitCode,
-        energyConsumption: parseFloat(row.energyConsumption),
-        energyConsumptionUnitCode: row.energyConsumption_unitCode,
-        operatorId: row.operatorId,
-        shiftCode: row.shiftCode,
-        productionDate: new Date(row.productionDate),
-        startTime: new Date(row.startTime),
-        endTime: new Date(row.endTime),
-        qualityStatus: row.qualityStatus,
-        defectType: row.defectType,
-        correctiveAction: row.correctiveAction,
-        observations: row.observations || null,
-      },
-    });
-  }
-
   console.log('Seed completed successfully!');
   console.log(
-    `  - Users: 2 (admin@replay.es / Admin123!, viewer@replay.es / Viewer123!)`
+    '  - Users: 4 (admin@replay.es, admin@molto.es, admin@plasnovo.es, viewer@replay.es / Demo2026!)'
   );
   console.log(`  - Products: ${products.length}`);
   console.log(`  - Actors: ${actors.length}`);
   console.log(
     `  - Environmental Metrics: ${Object.keys(environmentalMetrics).length}`
   );
-  console.log(`  - Plasnovo Recycling batches: ${plasnovoRows.length}`);
-  console.log(`  - Molto Production orders: ${moltoRows.length}`);
 }
 
 main()

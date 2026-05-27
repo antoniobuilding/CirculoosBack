@@ -32,6 +32,7 @@ export function authenticate(req, res, next) {
           email: user.email,
           name: user.name,
           role: user.role,
+          actorId: user.actorId,
         };
 
         next();
@@ -64,5 +65,41 @@ export function authorize(...roles) {
     }
 
     next();
+  };
+}
+
+export function authorizeActor(...actorNames) {
+  return async (req, res, next) => {
+    if (req.user.role === 'SUPERADMIN') return next();
+
+    if (!req.user.actorId) {
+      return res.status(403).json({
+        success: false,
+        error: 'No company assigned.',
+      });
+    }
+
+    try {
+      const actor = await prisma.actor.findUnique({
+        where: { id: req.user.actorId },
+      });
+
+      if (
+        !actor ||
+        !actorNames.some((name) =>
+          actor.name.toLowerCase().includes(name.toLowerCase())
+        )
+      ) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied for your company.',
+        });
+      }
+
+      req.actor = actor;
+      next();
+    } catch (err) {
+      next(err);
+    }
   };
 }
