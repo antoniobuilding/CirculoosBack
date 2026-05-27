@@ -1,9 +1,10 @@
 /**
  * CSV Generation Controller
- * Generates NGSI-LD compatible CSVs for the 3-step recycling flow:
+ * Generates NGSI-LD compatible CSVs for the 4-step circular recycling flow:
  *   1. Molto OUTPUT — defective/waste toys go OUT from Molto to Plasnovo
  *   2. Plasnovo RECEPTION — Plasnovo receives waste from Molto
  *   3. Plasnovo OUTPUT — Plasnovo sends recycled material back to Molto
+ *   4. Molto RECEPTION — Molto receives recycled material from Plasnovo
  */
 
 import prisma from '../config/prisma.js';
@@ -223,6 +224,70 @@ export async function generatePlasnovoOutputCsv(req, res, next) {
   }
 }
 
+// ── 4. Molto RECEPTION ────────────────────────────────────────────
+
+export async function generateMoltoReceptionCsv(req, res, next) {
+  try {
+    const { entries } = req.body;
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Request body must contain a non-empty "entries" array.',
+      });
+    }
+
+    const headers = [
+      'id',
+      'type',
+      'observedat',
+      'receptionId',
+      'receivedFrom',
+      'materialType',
+      'quantityReceived',
+      'quantityReceived_unitCode',
+      'rpid',
+      'receptionDate',
+      'colorVerification',
+      'qualityCheck',
+      'operatorId',
+      'shiftCode',
+      'storageLocation',
+      'observations',
+    ];
+
+    const rows = entries.map((entry) => ({
+      id: `urn:ngsi-ld:circuloos:molto_reception:${entry.receptionId}`,
+      type: 'molto_recycled_reception',
+      observedat: entry.receptionDate
+        ? new Date(entry.receptionDate).toISOString()
+        : '0',
+      receptionId: entry.receptionId,
+      receivedFrom: entry.receivedFrom || 'Plasnovo S.L',
+      materialType: entry.materialType,
+      quantityReceived: entry.quantityReceived,
+      quantityReceived_unitCode: 'KGM',
+      rpid: entry.rpid,
+      receptionDate: entry.receptionDate,
+      colorVerification: entry.colorVerification,
+      qualityCheck: entry.qualityCheck,
+      operatorId: entry.operatorId,
+      shiftCode: entry.shiftCode,
+      storageLocation: entry.storageLocation,
+      observations: entry.observations || '',
+    }));
+
+    const csv = buildCsvString(headers, rows);
+    const filename = `molto_reception_${Date.now()}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ── Templates ──────────────────────────────────────────────────────
 
 export async function getCsvTemplates(_req, res, next) {
@@ -285,6 +350,25 @@ export async function getCsvTemplates(_req, res, next) {
           { name: 'observations', type: 'string', required: false, example: '', description: 'Additional observations' },
         ],
       },
+    };
+
+    templates.moltoReception = {
+      label: 'Molto Recycled Material Reception',
+      description: 'Molto receives recycled material from Plasnovo and logs it',
+      fields: [
+        { name: 'receptionId', type: 'string', required: true, example: 'MR-2026-0001', description: 'Unique reception identifier' },
+        { name: 'receivedFrom', type: 'string', required: false, example: 'Plasnovo S.L', description: 'Source (default: Plasnovo S.L)' },
+        { name: 'materialType', type: 'string', required: true, options: ['PP', 'PS', 'ASA'], description: 'Material type' },
+        { name: 'quantityReceived', type: 'number', required: true, example: 245.2, description: 'Received weight in KG' },
+        { name: 'rpid', type: 'string', required: true, example: 'RPID-2026-00001', description: "Plasnovo's RPID for traceability" },
+        { name: 'receptionDate', type: 'date', required: true, example: '2026-03-20', description: 'Reception date' },
+        { name: 'colorVerification', type: 'string', required: true, options: ['correct', 'incorrect', 'pending'], description: 'Color matches order' },
+        { name: 'qualityCheck', type: 'string', required: true, options: ['passed', 'pending', 'failed'], description: 'Quality check result' },
+        { name: 'operatorId', type: 'string', required: true, example: 'OP-101', description: 'Operator identifier' },
+        { name: 'shiftCode', type: 'string', required: true, options: ['M', 'T', 'N'], description: 'Shift' },
+        { name: 'storageLocation', type: 'string', required: true, example: 'WH-MOLTO-01', description: 'Storage location' },
+        { name: 'observations', type: 'string', required: false, example: '', description: 'Additional observations' },
+      ],
     };
 
     return res.status(200).json({
