@@ -1,6 +1,7 @@
 /**
- * CSV Generation Controller
- * Generates NGSI-LD compatible CSVs for the 4-step circular recycling flow:
+ * Recycling flow controller — sends NGSI-LD entities directly to Orion-LD.
+ *
+ * 4-step circular recycling flow:
  *   1. Molto OUTPUT — defective/waste toys go OUT from Molto to Plasnovo
  *   2. Plasnovo RECEPTION — Plasnovo receives waste from Molto
  *   3. Plasnovo OUTPUT — Plasnovo sends recycled material back to Molto
@@ -8,77 +9,81 @@
  */
 
 import prisma from '../config/prisma.js';
+import orionService from '../services/orion.service.js';
 
-function escapeCsvField(value) {
-  if (value === null || value === undefined) return '';
-  const str = String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replace(/"/g, '""')}"`;
+function toIsoOrZero(value) {
+  if (!value) return '0';
+  try {
+    return new Date(value).toISOString();
+  } catch {
+    return '0';
   }
-  return str;
 }
 
-function buildCsvString(headers, rows) {
-  const headerLine = headers.join(',');
-  const dataLines = rows.map((row) =>
-    headers.map((h) => escapeCsvField(row[h])).join(',')
-  );
-  return [headerLine, ...dataLines].join('\n');
+function validateEntries(entries, res) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    res.status(400).json({
+      success: false,
+      error: 'Request body must contain a non-empty "entries" array.',
+    });
+    return false;
+  }
+  return true;
+}
+
+function handleOrionError(err, res, next) {
+  if (err && err.orionStatus !== undefined) {
+    return res.status(502).json({
+      success: false,
+      error: err.message,
+      orionStatus: err.orionStatus,
+      orionBody: err.orionBody,
+    });
+  }
+  return next(err);
 }
 
 // ── 1. Molto OUTPUT ────────────────────────────────────────────────
 
-export async function generateMoltoOutputCsv(req, res, next) {
+export async function sendMoltoOutput(req, res, next) {
   try {
     const { entries } = req.body;
+    if (!validateEntries(entries, res)) return;
 
-    if (!Array.isArray(entries) || entries.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Request body must contain a non-empty "entries" array.',
+    const entities = entries.map((entry) =>
+      orionService.buildEntity({
+        idPrefix: 'molto_output',
+        uniqueId: entry.batchId,
+        type: 'molto_waste_output',
+        observedAt: toIsoOrZero(entry.date),
+        properties: {
+          productReference: entry.productReference,
+          materialType: entry.materialType,
+          batchId: entry.batchId,
+          reason: entry.reason,
+          date: entry.date,
+          operatorId: entry.operatorId,
+          shiftCode: entry.shiftCode,
+          destination: entry.destination || 'Plasnovo S.L',
+          observations: entry.observations,
+          quantity: { value: entry.quantity, unitCode: 'KGM' },
+        },
+      })
+    );
+
+    try {
+      const result = await orionService.upsertEntities(entities);
+      return res.json({
+        success: true,
+        data: {
+          sent: entries.length,
+          orionStatus: result.orionStatus,
+          type: 'molto_waste_output',
+        },
       });
+    } catch (orionErr) {
+      return handleOrionError(orionErr, res, next);
     }
-
-    const headers = [
-      'id',
-      'type',
-      'observedat',
-      'batchId',
-      'productReference',
-      'materialType',
-      'quantity',
-      'quantity_unitCode',
-      'reason',
-      'date',
-      'operatorId',
-      'shiftCode',
-      'destination',
-      'observations',
-    ];
-
-    const rows = entries.map((entry) => ({
-      id: `urn:ngsi-ld:circuloos:molto_output:${entry.batchId}`,
-      type: 'molto_waste_output',
-      observedat: entry.date ? new Date(entry.date).toISOString() : '0',
-      batchId: entry.batchId,
-      productReference: entry.productReference,
-      materialType: entry.materialType,
-      quantity: entry.quantity,
-      quantity_unitCode: 'KGM',
-      reason: entry.reason,
-      date: entry.date,
-      operatorId: entry.operatorId,
-      shiftCode: entry.shiftCode,
-      destination: entry.destination || 'Plasnovo S.L',
-      observations: entry.observations || '',
-    }));
-
-    const csv = buildCsvString(headers, rows);
-    const filename = `molto_output_${Date.now()}.csv`;
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(csv);
   } catch (err) {
     next(err);
   }
@@ -86,65 +91,48 @@ export async function generateMoltoOutputCsv(req, res, next) {
 
 // ── 2. Plasnovo RECEPTION ──────────────────────────────────────────
 
-export async function generatePlasnovoReceptionCsv(req, res, next) {
+export async function sendPlasnovoReception(req, res, next) {
   try {
     const { entries } = req.body;
+    if (!validateEntries(entries, res)) return;
 
-    if (!Array.isArray(entries) || entries.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Request body must contain a non-empty "entries" array.',
+    const entities = entries.map((entry) =>
+      orionService.buildEntity({
+        idPrefix: 'plasnovo_reception',
+        uniqueId: entry.receptionId,
+        type: 'plasnovo_waste_reception',
+        observedAt: toIsoOrZero(entry.receptionDate),
+        properties: {
+          receptionId: entry.receptionId,
+          receivedFrom: entry.receivedFrom || 'Molto',
+          materialType: entry.materialType,
+          receptionDate: entry.receptionDate,
+          batchId: entry.batchId,
+          conditionAssessment: entry.conditionAssessment,
+          moistureLevel: entry.moistureLevel,
+          contaminationLevel: entry.contaminationLevel,
+          operatorId: entry.operatorId,
+          shiftCode: entry.shiftCode,
+          storageLocation: entry.storageLocation,
+          observations: entry.observations,
+          quantityReceived: { value: entry.quantityReceived, unitCode: 'KGM' },
+        },
+      })
+    );
+
+    try {
+      const result = await orionService.upsertEntities(entities);
+      return res.json({
+        success: true,
+        data: {
+          sent: entries.length,
+          orionStatus: result.orionStatus,
+          type: 'plasnovo_waste_reception',
+        },
       });
+    } catch (orionErr) {
+      return handleOrionError(orionErr, res, next);
     }
-
-    const headers = [
-      'id',
-      'type',
-      'observedat',
-      'receptionId',
-      'receivedFrom',
-      'materialType',
-      'quantityReceived',
-      'quantityReceived_unitCode',
-      'receptionDate',
-      'batchId',
-      'conditionAssessment',
-      'moistureLevel',
-      'contaminationLevel',
-      'operatorId',
-      'shiftCode',
-      'storageLocation',
-      'observations',
-    ];
-
-    const rows = entries.map((entry) => ({
-      id: `urn:ngsi-ld:circuloos:plasnovo_reception:${entry.receptionId}`,
-      type: 'plasnovo_waste_reception',
-      observedat: entry.receptionDate
-        ? new Date(entry.receptionDate).toISOString()
-        : '0',
-      receptionId: entry.receptionId,
-      receivedFrom: entry.receivedFrom || 'Molto',
-      materialType: entry.materialType,
-      quantityReceived: entry.quantityReceived,
-      quantityReceived_unitCode: 'KGM',
-      receptionDate: entry.receptionDate,
-      batchId: entry.batchId,
-      conditionAssessment: entry.conditionAssessment,
-      moistureLevel: entry.moistureLevel,
-      contaminationLevel: entry.contaminationLevel,
-      operatorId: entry.operatorId,
-      shiftCode: entry.shiftCode,
-      storageLocation: entry.storageLocation,
-      observations: entry.observations || '',
-    }));
-
-    const csv = buildCsvString(headers, rows);
-    const filename = `plasnovo_reception_${Date.now()}.csv`;
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(csv);
   } catch (err) {
     next(err);
   }
@@ -152,73 +140,51 @@ export async function generatePlasnovoReceptionCsv(req, res, next) {
 
 // ── 3. Plasnovo OUTPUT ─────────────────────────────────────────────
 
-export async function generatePlasnovoOutputCsv(req, res, next) {
+export async function sendPlasnovoOutput(req, res, next) {
   try {
     const { entries } = req.body;
+    if (!validateEntries(entries, res)) return;
 
-    if (!Array.isArray(entries) || entries.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Request body must contain a non-empty "entries" array.',
+    const entities = entries.map((entry) =>
+      orionService.buildEntity({
+        idPrefix: 'plasnovo_output',
+        uniqueId: entry.rpid,
+        type: 'plasnovo_recycled_output',
+        observedAt: toIsoOrZero(entry.outputDate),
+        properties: {
+          rpid: entry.rpid,
+          materialType: entry.materialType,
+          recycledContent: entry.recycledContent,
+          colorant: entry.colorant,
+          polymerGrade: entry.polymerGrade,
+          meltFlowIndex: entry.meltFlowIndex,
+          qualityGrade: entry.qualityGrade,
+          batchStatus: entry.batchStatus,
+          processLine: entry.processLine,
+          outputDate: entry.outputDate,
+          destination: entry.destination || 'Molto',
+          operatorId: entry.operatorId,
+          shiftCode: entry.shiftCode,
+          observations: entry.observations,
+          quantityOutput: { value: entry.quantityOutput, unitCode: 'KGM' },
+          colorantQuantity: { value: entry.colorantQuantity, unitCode: 'KGM' },
+        },
+      })
+    );
+
+    try {
+      const result = await orionService.upsertEntities(entities);
+      return res.json({
+        success: true,
+        data: {
+          sent: entries.length,
+          orionStatus: result.orionStatus,
+          type: 'plasnovo_recycled_output',
+        },
       });
+    } catch (orionErr) {
+      return handleOrionError(orionErr, res, next);
     }
-
-    const headers = [
-      'id',
-      'type',
-      'observedat',
-      'rpid',
-      'materialType',
-      'quantityOutput',
-      'quantityOutput_unitCode',
-      'recycledContent',
-      'colorant',
-      'colorantQuantity',
-      'colorantQuantity_unitCode',
-      'polymerGrade',
-      'meltFlowIndex',
-      'qualityGrade',
-      'batchStatus',
-      'processLine',
-      'outputDate',
-      'destination',
-      'operatorId',
-      'shiftCode',
-      'observations',
-    ];
-
-    const rows = entries.map((entry) => ({
-      id: `urn:ngsi-ld:circuloos:plasnovo_output:${entry.rpid}`,
-      type: 'plasnovo_recycled_output',
-      observedat: entry.outputDate
-        ? new Date(entry.outputDate).toISOString()
-        : '0',
-      rpid: entry.rpid,
-      materialType: entry.materialType,
-      quantityOutput: entry.quantityOutput,
-      quantityOutput_unitCode: 'KGM',
-      recycledContent: entry.recycledContent,
-      colorant: entry.colorant,
-      colorantQuantity: entry.colorantQuantity,
-      colorantQuantity_unitCode: 'KGM',
-      polymerGrade: entry.polymerGrade,
-      meltFlowIndex: entry.meltFlowIndex,
-      qualityGrade: entry.qualityGrade,
-      batchStatus: entry.batchStatus,
-      processLine: entry.processLine,
-      outputDate: entry.outputDate,
-      destination: entry.destination || 'Molto',
-      operatorId: entry.operatorId,
-      shiftCode: entry.shiftCode,
-      observations: entry.observations || '',
-    }));
-
-    const csv = buildCsvString(headers, rows);
-    const filename = `plasnovo_output_${Date.now()}.csv`;
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(csv);
   } catch (err) {
     next(err);
   }
@@ -226,63 +192,47 @@ export async function generatePlasnovoOutputCsv(req, res, next) {
 
 // ── 4. Molto RECEPTION ────────────────────────────────────────────
 
-export async function generateMoltoReceptionCsv(req, res, next) {
+export async function sendMoltoReception(req, res, next) {
   try {
     const { entries } = req.body;
+    if (!validateEntries(entries, res)) return;
 
-    if (!Array.isArray(entries) || entries.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Request body must contain a non-empty "entries" array.',
+    const entities = entries.map((entry) =>
+      orionService.buildEntity({
+        idPrefix: 'molto_reception',
+        uniqueId: entry.receptionId,
+        type: 'molto_recycled_reception',
+        observedAt: toIsoOrZero(entry.receptionDate),
+        properties: {
+          receptionId: entry.receptionId,
+          receivedFrom: entry.receivedFrom || 'Plasnovo S.L',
+          materialType: entry.materialType,
+          rpid: entry.rpid,
+          receptionDate: entry.receptionDate,
+          colorVerification: entry.colorVerification,
+          qualityCheck: entry.qualityCheck,
+          operatorId: entry.operatorId,
+          shiftCode: entry.shiftCode,
+          storageLocation: entry.storageLocation,
+          observations: entry.observations,
+          quantityReceived: { value: entry.quantityReceived, unitCode: 'KGM' },
+        },
+      })
+    );
+
+    try {
+      const result = await orionService.upsertEntities(entities);
+      return res.json({
+        success: true,
+        data: {
+          sent: entries.length,
+          orionStatus: result.orionStatus,
+          type: 'molto_recycled_reception',
+        },
       });
+    } catch (orionErr) {
+      return handleOrionError(orionErr, res, next);
     }
-
-    const headers = [
-      'id',
-      'type',
-      'observedat',
-      'receptionId',
-      'receivedFrom',
-      'materialType',
-      'quantityReceived',
-      'quantityReceived_unitCode',
-      'rpid',
-      'receptionDate',
-      'colorVerification',
-      'qualityCheck',
-      'operatorId',
-      'shiftCode',
-      'storageLocation',
-      'observations',
-    ];
-
-    const rows = entries.map((entry) => ({
-      id: `urn:ngsi-ld:circuloos:molto_reception:${entry.receptionId}`,
-      type: 'molto_recycled_reception',
-      observedat: entry.receptionDate
-        ? new Date(entry.receptionDate).toISOString()
-        : '0',
-      receptionId: entry.receptionId,
-      receivedFrom: entry.receivedFrom || 'Plasnovo S.L',
-      materialType: entry.materialType,
-      quantityReceived: entry.quantityReceived,
-      quantityReceived_unitCode: 'KGM',
-      rpid: entry.rpid,
-      receptionDate: entry.receptionDate,
-      colorVerification: entry.colorVerification,
-      qualityCheck: entry.qualityCheck,
-      operatorId: entry.operatorId,
-      shiftCode: entry.shiftCode,
-      storageLocation: entry.storageLocation,
-      observations: entry.observations || '',
-    }));
-
-    const csv = buildCsvString(headers, rows);
-    const filename = `molto_reception_${Date.now()}.csv`;
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(csv);
   } catch (err) {
     next(err);
   }

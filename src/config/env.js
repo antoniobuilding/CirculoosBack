@@ -11,6 +11,9 @@ const env = {
   JWT_EXPIRATION: process.env.JWT_EXPIRATION || '24h',
   JWT_REFRESH_EXPIRATION: process.env.JWT_REFRESH_EXPIRATION || '7d',
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  ORION_URL: process.env.ORION_URL || 'https://circuloos.buildingblocks.es:1026',
+  ORION_TENANT: process.env.ORION_TENANT || 'circuloos_demo',
+  ORION_CONTEXT: process.env.ORION_CONTEXT || 'http://circuloos-ld-context/circuloos-context.jsonld',
 };
 
 const requiredVars = ['JWT_SECRET', 'JWT_REFRESH_SECRET'];
