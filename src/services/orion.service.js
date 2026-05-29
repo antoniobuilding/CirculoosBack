@@ -1,9 +1,65 @@
+import { Agent } from 'undici';
 import env from '../config/env.js';
 
 /**
+ * Custom dispatcher to skip TLS cert validation (Circuloos uses self-signed certs).
+ * Only kept for compatibility with the production Circuloos setup.
+ */
+const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+
+/**
+ * Token cache. Keycloak tokens expire in ~300s. We refresh 30s before expiry.
+ */
+let cachedToken = null;
+let cachedTokenExpiresAt = 0;
+
+async function fetchToken() {
+  const url = `${env.KEYCLOAK_URL}/realms/${env.KEYCLOAK_REALM}/protocol/openid-connect/token`;
+  const params = new URLSearchParams({
+    grant_type: 'password',
+    username: env.KEYCLOAK_USER,
+    password: env.KEYCLOAK_PASSWORD,
+    client_id: env.KEYCLOAK_CLIENT_ID,
+    client_secret: env.KEYCLOAK_CLIENT_SECRET,
+  });
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+    dispatcher: insecureDispatcher,
+  });
+
+  const text = await response.text();
+  let body;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+
+  if (!response.ok) {
+    const err = new Error(`Keycloak token fetch failed: ${response.status} ${response.statusText}`);
+    err.orionStatus = response.status;
+    err.orionBody = body;
+    throw err;
+  }
+
+  return {
+    accessToken: body.access_token,
+    expiresIn: body.expires_in || 300,
+  };
+}
+
+async function getToken() {
+  const now = Date.now();
+  if (cachedToken && now < cachedTokenExpiresAt) {
+    return cachedToken;
+  }
+  const { accessToken, expiresIn } = await fetchToken();
+  cachedToken = accessToken;
+  cachedTokenExpiresAt = now + (expiresIn - 30) * 1000;
+  return cachedToken;
+}
+
+/**
  * Builds an NGSI-LD entity from raw field data.
- * Fields with numeric values get a Property type with optional unitCode.
- * Fields with string values become simple Properties.
  */
 function buildEntity({ idPrefix, uniqueId, type, observedAt, properties }) {
   const entity = {
@@ -17,10 +73,8 @@ function buildEntity({ idPrefix, uniqueId, type, observedAt, properties }) {
     if (descriptor === null || descriptor === undefined || descriptor === '') continue;
 
     if (typeof descriptor === 'object' && descriptor.value !== undefined) {
-      // Already a property descriptor with value/unitCode
       entity[key] = { type: 'Property', ...descriptor };
     } else {
-      // Plain value
       entity[key] = { type: 'Property', value: descriptor };
     }
   }
@@ -29,19 +83,23 @@ function buildEntity({ idPrefix, uniqueId, type, observedAt, properties }) {
 }
 
 /**
- * POSTs a batch of NGSI-LD entities to Orion-LD upsert endpoint.
- * Returns { success, count, orionStatus, orionBody }.
+ * POSTs a batch of NGSI-LD entities to Orion-LD via Kong (with Keycloak Bearer token).
  */
 async function upsertEntities(entities) {
+  const token = await getToken();
   const url = `${env.ORION_URL}/ngsi-ld/v1/entityOperations/upsert`;
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/ld+json',
+      'Accept': 'application/json',
       'NGSILD-Tenant': env.ORION_TENANT,
+      'NGSILD-Path': '/',
+      'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify(entities),
+    dispatcher: insecureDispatcher,
   });
 
   const text = await response.text();
