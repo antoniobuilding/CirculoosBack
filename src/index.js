@@ -8,6 +8,9 @@ import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
 
+// Trust Railway's reverse proxy (so X-Forwarded-For is honored by rate-limit)
+app.set('trust proxy', 1);
+
 // Security
 app.use(helmet());
 
