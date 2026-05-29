@@ -1,7 +1,9 @@
 import { Prisma } from '@prisma/client';
 
 export function errorHandler(err, req, res, _next) {
-  console.error('Error:', err);
+  console.error('[ERROR]', req.method, req.path, '-', err?.name, err?.message);
+  if (err?.cause) console.error('[ERROR cause]', err.cause);
+  if (err?.stack) console.error(err.stack);
 
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {

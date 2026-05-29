@@ -1,9 +1,8 @@
-import { Agent } from 'undici';
+import { fetch, Agent } from 'undici';
 import env from '../config/env.js';
 
 /**
  * Custom dispatcher to skip TLS cert validation (Circuloos uses self-signed certs).
- * Only kept for compatibility with the production Circuloos setup.
  */
 const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
 
